@@ -15,6 +15,24 @@ public class ExceptionHandlingMiddleware(RequestDelegate next, ILogger<Exception
         try
         {
             await next(context);
+
+            // Catch empty error responses (e.g. 404 from routing, 405 method not allowed)
+            if (!context.Response.HasStarted && context.Response.StatusCode >= 400
+                && context.Response.ContentLength is null or 0
+                && context.Response.ContentType is null)
+            {
+                var correlationId = context.Items["CorrelationId"]?.ToString() ?? "unknown";
+                var message = context.Response.StatusCode switch
+                {
+                    404 => "The requested resource was not found.",
+                    405 => "HTTP method not allowed.",
+                    _ => "An error occurred."
+                };
+
+                context.Response.ContentType = "application/json";
+                var response = ApiResponse<object>.Error(message, context.Response.StatusCode, correlationId);
+                await context.Response.WriteAsync(JsonSerializer.Serialize(response, JsonOptions));
+            }
         }
         catch (Exception ex)
         {

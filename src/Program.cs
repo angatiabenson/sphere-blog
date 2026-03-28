@@ -44,6 +44,39 @@ builder
             IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecret)),
             ClockSkew = TimeSpan.Zero,
         };
+
+        options.Events = new JwtBearerEvents
+        {
+            OnChallenge = async context =>
+            {
+                context.HandleResponse();
+                context.Response.StatusCode = 401;
+                context.Response.ContentType = "application/json";
+                var correlationId = context.HttpContext.Items["CorrelationId"]?.ToString() ?? "unknown";
+                var json = System.Text.Json.JsonSerializer.Serialize(new
+                {
+                    status = "error",
+                    code = 401,
+                    message = "Authentication is required to access this resource.",
+                    reference = correlationId
+                });
+                await context.Response.WriteAsync(json);
+            },
+            OnForbidden = async context =>
+            {
+                context.Response.StatusCode = 403;
+                context.Response.ContentType = "application/json";
+                var correlationId = context.HttpContext.Items["CorrelationId"]?.ToString() ?? "unknown";
+                var json = System.Text.Json.JsonSerializer.Serialize(new
+                {
+                    status = "error",
+                    code = 403,
+                    message = "You do not have permission to access this resource.",
+                    reference = correlationId
+                });
+                await context.Response.WriteAsync(json);
+            }
+        };
     });
 
 builder.Services.AddAuthorization();
@@ -55,6 +88,21 @@ var windowSeconds = builder.Configuration.GetValue("RateLimiting:WindowInSeconds
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = 429;
+
+    options.OnRejected = async (context, cancellationToken) =>
+    {
+        context.HttpContext.Response.StatusCode = 429;
+        context.HttpContext.Response.ContentType = "application/json";
+        var correlationId = context.HttpContext.Items["CorrelationId"]?.ToString() ?? "unknown";
+        var json = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            status = "error",
+            code = 429,
+            message = "Too many requests. Please try again later.",
+            reference = correlationId
+        });
+        await context.HttpContext.Response.WriteAsync(json, cancellationToken);
+    };
 
     options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
     {
@@ -87,6 +135,36 @@ builder.Services.AddCors(options =>
 // Controllers + JSON options
 builder
     .Services.AddControllers()
+    .ConfigureApiBehaviorOptions(options =>
+    {
+        // Override default validation error response to use our envelope
+        options.InvalidModelStateResponseFactory = context =>
+        {
+            var correlationId = context.HttpContext.Items["CorrelationId"]?.ToString() ?? "unknown";
+            var errors = context.ModelState
+                .Where(e => e.Value?.Errors.Count > 0)
+                .ToDictionary(
+                    e => e.Key,
+                    e => e.Value!.Errors.Select(err => err.ErrorMessage).ToArray()
+                );
+
+            var firstError = context.ModelState.Values
+                .SelectMany(v => v.Errors)
+                .Select(e => e.ErrorMessage)
+                .FirstOrDefault() ?? "One or more validation errors occurred.";
+
+            var response = new
+            {
+                status = "error",
+                code = 400,
+                message = firstError,
+                errors,
+                reference = correlationId
+            };
+
+            return new Microsoft.AspNetCore.Mvc.BadRequestObjectResult(response);
+        };
+    })
     .AddJsonOptions(options =>
     {
         options.JsonSerializerOptions.PropertyNamingPolicy = System
