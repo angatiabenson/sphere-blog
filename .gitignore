@@ -76,6 +76,7 @@ TestResult.xml
 *.sln.iml
 
 ## User secrets / sensitive config
+**/appsettings.json
 **/appsettings.*.local.json
 **/secrets.json
 *.pfx

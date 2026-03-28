@@ -3,6 +3,7 @@ using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using Microsoft.OpenApi;
 using Scalar.AspNetCore;
 using Serilog;
 using SphereBlog.API.Middleware;
@@ -96,7 +97,39 @@ builder
     });
 
 // OpenAPI + Scalar
-builder.Services.AddOpenApi();
+builder.Services.AddSwaggerGen(options =>
+{
+    options.SwaggerDoc(
+        "v1",
+        new OpenApiInfo
+        {
+            Title = "Sphere Blog API",
+            Version = "v1",
+            Description =
+                "A simple blog engine REST API.",
+            Contact = new OpenApiContact { Name = "Sphere Blog Support" },
+        }
+    );
+
+    // JWT Bearer security scheme
+    options.AddSecurityDefinition(
+        "Bearer",
+        new OpenApiSecurityScheme
+        {
+            Name = "Authorization",
+            Type = SecuritySchemeType.Http,
+            Scheme = "bearer",
+            BearerFormat = "JWT",
+            In = ParameterLocation.Header,
+            Description = "Enter your JWT token. Obtain one via the Login endpoint.",
+        }
+    );
+
+    options.AddSecurityRequirement(document => new OpenApiSecurityRequirement
+    {
+        [new OpenApiSecuritySchemeReference("bearer", document)] = []
+    });
+});
 
 var app = builder.Build();
 
@@ -138,14 +171,20 @@ app.Use(
 );
 
 // Scalar API docs at /docs
-app.MapOpenApi();
+app.UseSwagger(c =>
+{
+    c.RouteTemplate = "openapi/{documentName}.json";
+});
+
 app.MapScalarApiReference(
     "/docs",
     options =>
     {
         options
-            .WithTitle("Sphere Blog API")
-            .WithDefaultHttpClient(ScalarTarget.CSharp, ScalarClient.HttpClient);
+             .WithTitle("Sphere Blog API")
+             .WithTheme(ScalarTheme.Purple)
+             .WithDefaultHttpClient(ScalarTarget.CSharp, ScalarClient.HttpClient)
+             .WithOpenApiRoutePattern("/openapi/{documentName}.json");
     }
 );
 
