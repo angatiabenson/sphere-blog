@@ -19,6 +19,9 @@ jobs:
         with:
           dotnet-version: "10.0.x"
 
+      - name: Prepare test configuration
+        run: cp src/appsettings.example.json src/appsettings.json
+
       - name: Restore dependencies
         run: dotnet restore
 
