@@ -108,5 +108,9 @@ out/
 ## IIS
 web.config.bak
 
+## Publish profiles — keep .pubxml (config), ignore .pubxml.user (local history)
+**/PublishProfiles/*.pubxml.user
+
 ## dotnet user-secrets
 secrets.json
+*.ps1

@@ -24,10 +24,18 @@ public class BlogsController(IBlogService blogService) : ControllerBase
 
     [HttpGet("{id:guid}")]
     [ProducesResponseType(typeof(ApiResponse<BlogResponse>), 200)]
+    [ProducesResponseType(typeof(ApiResponse<object>), 404)]
     public async Task<IActionResult> GetById(Guid id)
     {
-        var result = await blogService.GetByIdAsync(id);
-        return Ok(ApiResponse<BlogResponse>.Success(result));
+        try
+        {
+            var result = await blogService.GetByIdAsync(id);
+            return Ok(ApiResponse<BlogResponse>.Success(result));
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(ApiResponse<object>.Error(ex.Message, 404, CorrelationId));
+        }
     }
 
     [Authorize]
@@ -43,27 +51,58 @@ public class BlogsController(IBlogService blogService) : ControllerBase
     [Authorize]
     [HttpPut("{id:guid}")]
     [ProducesResponseType(typeof(ApiResponse<BlogResponse>), 200)]
+    [ProducesResponseType(typeof(ApiResponse<object>), 403)]
+    [ProducesResponseType(typeof(ApiResponse<object>), 404)]
     public async Task<IActionResult> Update(Guid id, [FromBody] UpdateBlogRequest request)
     {
-        var userId = GetUserId();
-        var result = await blogService.UpdateAsync(id, request, userId);
-        return Ok(ApiResponse<BlogResponse>.Success(result));
+        try
+        {
+            var userId = GetUserId();
+            var result = await blogService.UpdateAsync(id, request, userId);
+            return Ok(ApiResponse<BlogResponse>.Success(result));
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(ApiResponse<object>.Error(ex.Message, 404, CorrelationId));
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return StatusCode(403, ApiResponse<object>.Error("You do not have permission to perform this action.", 403, CorrelationId));
+        }
     }
 
     [Authorize]
     [HttpDelete("{id:guid}")]
     [ProducesResponseType(204)]
+    [ProducesResponseType(typeof(ApiResponse<object>), 403)]
+    [ProducesResponseType(typeof(ApiResponse<object>), 404)]
     public async Task<IActionResult> Delete(Guid id)
     {
-        var userId = GetUserId();
-        await blogService.DeleteAsync(id, userId);
-        return NoContent();
+        try
+        {
+            var userId = GetUserId();
+            await blogService.DeleteAsync(id, userId);
+            return NoContent();
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(ApiResponse<object>.Error(ex.Message, 404, CorrelationId));
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return StatusCode(403, ApiResponse<object>.Error("You do not have permission to perform this action.", 403, CorrelationId));
+        }
     }
 
     private Guid GetUserId()
     {
-        var claim = User.FindFirst("sub")?.Value
+        var value = User.FindFirst("sub")?.Value
             ?? User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        return Guid.Parse(claim!);
+        if (value is null)
+            throw new UnauthorizedAccessException();
+        return Guid.Parse(value);
     }
+
+    private string CorrelationId =>
+        HttpContext.Items["CorrelationId"]?.ToString() ?? "unknown";
 }

@@ -11,17 +11,36 @@ public class AuthController(IAuthService authService) : ControllerBase
 {
     [HttpPost("register")]
     [ProducesResponseType(typeof(ApiResponse<AuthResponse>), 201)]
+    [ProducesResponseType(typeof(ApiResponse<object>), 400)]
     public async Task<IActionResult> Register([FromBody] RegisterRequest request)
     {
-        var result = await authService.RegisterAsync(request);
-        return StatusCode(201, ApiResponse<AuthResponse>.Success(result, 201));
+        try
+        {
+            var result = await authService.RegisterAsync(request);
+            return StatusCode(201, ApiResponse<AuthResponse>.Success(result, 201));
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(ApiResponse<object>.Error(ex.Message, 400, CorrelationId));
+        }
     }
 
     [HttpPost("login")]
     [ProducesResponseType(typeof(ApiResponse<AuthResponse>), 200)]
+    [ProducesResponseType(typeof(ApiResponse<object>), 400)]
     public async Task<IActionResult> Login([FromBody] LoginRequest request)
     {
-        var result = await authService.LoginAsync(request);
-        return Ok(ApiResponse<AuthResponse>.Success(result));
+        try
+        {
+            var result = await authService.LoginAsync(request);
+            return Ok(ApiResponse<AuthResponse>.Success(result));
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(ApiResponse<object>.Error(ex.Message, 400, CorrelationId));
+        }
     }
+
+    private string CorrelationId =>
+        HttpContext.Items["CorrelationId"]?.ToString() ?? "unknown";
 }

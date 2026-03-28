@@ -16,7 +16,7 @@ public class ExceptionHandlingMiddleware(RequestDelegate next, ILogger<Exception
         {
             await next(context);
 
-            // Catch empty error responses (e.g. 404 from routing, 405 method not allowed)
+            // Wrap empty error responses (e.g. 401 from [Authorize], 404 from routing, 429 from rate limiter)
             if (!context.Response.HasStarted && context.Response.StatusCode >= 400
                 && context.Response.ContentLength is null or 0
                 && context.Response.ContentType is null)
@@ -24,8 +24,11 @@ public class ExceptionHandlingMiddleware(RequestDelegate next, ILogger<Exception
                 var correlationId = context.Items["CorrelationId"]?.ToString() ?? "unknown";
                 var message = context.Response.StatusCode switch
                 {
+                    401 => "Authentication is required.",
+                    403 => "You do not have permission to perform this action.",
                     404 => "The requested resource was not found.",
                     405 => "HTTP method not allowed.",
+                    429 => "Too many requests. Please slow down.",
                     _ => "An error occurred."
                 };
 
@@ -38,8 +41,6 @@ public class ExceptionHandlingMiddleware(RequestDelegate next, ILogger<Exception
         {
             var correlationId = context.Items["CorrelationId"]?.ToString() ?? "unknown";
 
-            logger.LogError(ex, "Unhandled exception. CorrelationId: {CorrelationId}", correlationId);
-
             var (statusCode, message) = ex switch
             {
                 KeyNotFoundException => (404, "The requested resource was not found."),
@@ -48,11 +49,30 @@ public class ExceptionHandlingMiddleware(RequestDelegate next, ILogger<Exception
                 _ => (500, "An unexpected error occurred. Please try again later.")
             };
 
-            context.Response.StatusCode = statusCode;
-            context.Response.ContentType = "application/json";
+            if (statusCode >= 500)
+                logger.LogError(ex, "Unhandled server error. CorrelationId: {CorrelationId}", correlationId);
+            else
+                logger.LogWarning("Client error {StatusCode}: {Message}. CorrelationId: {CorrelationId}",
+                    statusCode, ex.Message, correlationId);
 
-            var response = ApiResponse<object>.Error(message, statusCode, correlationId);
-            await context.Response.WriteAsync(JsonSerializer.Serialize(response, JsonOptions));
+            if (context.Response.HasStarted)
+            {
+                logger.LogWarning("Cannot write error response; response already started. CorrelationId: {CorrelationId}", correlationId);
+                return;
+            }
+
+            try
+            {
+                context.Response.Clear();
+                context.Response.StatusCode = statusCode;
+                context.Response.ContentType = "application/json";
+                var response = ApiResponse<object>.Error(message, statusCode, correlationId);
+                await context.Response.WriteAsync(JsonSerializer.Serialize(response, JsonOptions));
+            }
+            catch (Exception writeEx)
+            {
+                logger.LogError(writeEx, "Failed to write error response. CorrelationId: {CorrelationId}", correlationId);
+            }
         }
     }
 }
