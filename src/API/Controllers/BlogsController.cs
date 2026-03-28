@@ -62,7 +62,8 @@ public class BlogsController(IBlogService blogService) : ControllerBase
 
     private Guid GetUserId()
     {
-        var claim = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        var claim = User.FindFirst("sub")?.Value
+            ?? User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         return Guid.Parse(claim!);
     }
 }

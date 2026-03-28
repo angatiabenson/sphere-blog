@@ -2,4 +2,7 @@
   <Folder Name="/src/">
     <Project Path="src/SphereBlog.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/SphereBlog.Tests.csproj" />
+  </Folder>
 </Solution>

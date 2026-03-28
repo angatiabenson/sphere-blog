@@ -35,13 +35,10 @@ public class BlogService(AppDbContext db) : IBlogService
 
     public async Task<BlogResponse> GetByIdAsync(Guid id)
     {
-        var blog = await db
-            .Blogs.Include(b => b.Author)
-            .Include(b => b.BlogTags)
-                .ThenInclude(bt => bt.Tag)
-            .Include(b => b.Comments)
-                .ThenInclude(c => c.Author)
-            .AsNoTracking()
+        var blog = await db.Blogs
+            .Include(b => b.Author)
+            .Include(b => b.BlogTags).ThenInclude(bt => bt.Tag)
+            .Include(b => b.Comments).ThenInclude(c => c.Author)
             .FirstOrDefaultAsync(b => b.Id == id);
 
         if (blog is null)
@@ -66,6 +63,8 @@ public class BlogService(AppDbContext db) : IBlogService
         db.Blogs.Add(blog);
         await db.SaveChangesAsync();
 
+        // Detach all tracked entities so the re-query loads fresh data with includes
+        db.ChangeTracker.Clear();
         return await GetByIdAsync(blog.Id);
     }
 
